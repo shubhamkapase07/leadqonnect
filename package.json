@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "db:init": "node --env-file-if-exists=.env.local scripts/init-db.mjs"
+    "db:init": "node --env-file-if-exists=.env.local scripts/init-db.mjs",
+    "job:auto-scan": "node --env-file-if-exists=.env.local --import tsx scripts/auto-scan.mjs",
+    "job:sequences": "node --env-file-if-exists=.env.local --import tsx scripts/process-sequences.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",

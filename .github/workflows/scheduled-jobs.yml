@@ -1,0 +1,53 @@
+name: LeadQonnect scheduled jobs
+
+# Replaces the Firebase scheduled Cloud Functions (auto-scan + sequence sender).
+# Secrets required (Repo Settings -> Secrets and variables -> Actions):
+#   TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, GEMINI_API_KEY, REDDIT_USER_AGENT
+#   (+ REDDIT_CLIENT_ID/SECRET, GOOGLE_CLIENT_ID/SECRET, APP_URL for sequence sending)
+
+on:
+  schedule:
+    - cron: "0 * * * *"     # hourly: process outreach sequences
+    - cron: "30 6 * * *"    # daily 06:30 UTC: auto-scan campaigns
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Which job to run"
+        type: choice
+        options: [both, auto-scan, sequences]
+        default: both
+
+concurrency:
+  group: leadqonnect-jobs
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: gemini-flash-latest
+      REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
+      REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+      REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      APP_URL: ${{ secrets.APP_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci || npm install
+
+      # Sequences run hourly; auto-scan runs on the daily cron. workflow_dispatch respects the input.
+      - name: Process sequences
+        if: github.event.schedule == '0 * * * *' || github.event.inputs.job == 'sequences' || github.event.inputs.job == 'both'
+        run: npm run job:sequences
+
+      - name: Auto-scan campaigns
+        if: github.event.schedule == '30 6 * * *' || github.event.inputs.job == 'auto-scan' || github.event.inputs.job == 'both'
+        run: npm run job:auto-scan
