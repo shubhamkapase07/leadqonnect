@@ -1,0 +1,44 @@
+name: LeadFinder scan
+
+# Free lead-scanning engine. Runs on a schedule (and on-demand) inside GitHub Actions
+# — no server needed. Set the four secrets below under:
+#   Repo -> Settings -> Secrets and variables -> Actions -> New repository secret
+#     TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, GEMINI_API_KEY (optional), REDDIT_USER_AGENT
+
+on:
+  schedule:
+    # Every hour, on the hour (UTC). Adjust cadence here.
+    - cron: "0 * * * *"
+  workflow_dispatch: {} # lets you run it manually from the Actions tab
+
+# Prevent overlapping runs if a scan runs long.
+concurrency:
+  group: leadfinder-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: leadfinder
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: leadfinder/package-lock.json
+
+      - name: Install deps
+        run: npm ci || npm install
+
+      - name: Run scan
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-flash-latest
+          REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
+        run: npm run scan

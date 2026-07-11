@@ -1,0 +1,20 @@
+{
+  "name": "leadfinder",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Free personal lead-finding engine — Reddit (public API) -> Gemini scoring -> Turso -> Vercel dashboard.",
+  "scripts": {
+    "init-db": "node --env-file-if-exists=.env --import tsx src/init-db.ts",
+    "scan": "node --env-file-if-exists=.env --import tsx src/cli.ts",
+    "dev": "vercel dev"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

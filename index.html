@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="LeadQonnect is an AI-powered social listening tool that connects service providers with high-intent leads on Reddit, X, and LinkedIn." />
+    <title>LeadQonnect | AI Social Listening & Lead Generation</title>
+    <script>
+      // Apply persisted theme before first paint to avoid a flash. Default: light.
+      (function () {
+        try {
+          var t = localStorage.getItem('lq_theme');
+          document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

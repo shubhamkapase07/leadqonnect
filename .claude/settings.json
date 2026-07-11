@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(curl -s -w \"\\\\nHTTP_STATUS:%{http_code}\" \"https://www.reddit.com/r/forhire/search.json?q=developer&sort=new&t=week&restrict_sr=1&limit=5\" -H \"User-Agent: Mozilla/5.0\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:5173/reddit-public/r/forhire/search.json?q=developer&sort=new&t=week&restrict_sr=1&limit=3\")",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' 'https://www.reddit.com/r/forhire/search.json?q=developer&sort=new&t=week&restrict_sr=1&limit=3' -H 'User-Agent: Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/125.0.0.0 Safari/537.36' -H 'Accept: application/json')",
+      "Bash(curl -s \"https://hn.algolia.com/api/v1/search?query=react+developer+hiring&tags=ask_hn&hitsPerPage=3\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s \"https://hn.algolia.com/api/v1/search_by_date?query=react+developer+seeking&tags=comment&numericFilters=created_at_i%3E1780000000&hitsPerPage=2\")",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}

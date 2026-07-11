@@ -1,0 +1,140 @@
+rules_version = '2';
+
+// LeadQonnect Firestore security rules.
+// Each user owns users/{uid} and everything under it (their leads/campaigns/conversations).
+// Admins can read/manage all user docs. Reddit OAuth tokens are server-only.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+    // The signed-in user's email, lowercased (we store assignee/invite emails lowercased).
+    function myEmail() {
+      return request.auth.token.email != null ? request.auth.token.email.lower() : '';
+    }
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == 'admin@leadqonnect.com'
+        );
+    }
+
+    // A parent may read their own children's user docs (to manage the team roster).
+    function isMyChild(uid) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(uid))
+        && get(/databases/$(database)/documents/users/$(uid)).data.parentUid == request.auth.uid;
+    }
+
+    // My own team leader's uid (my parentUid), or null if I'm not on a team.
+    function myParentUid() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.parentUid
+        : null;
+    }
+    // A teammate may read their leader's doc and the docs of fellow members
+    // (everyone who shares the same leader), so the roster can be shown.
+    function sharesMyTeam(uid) {
+      return isSignedIn() && myParentUid() != null && (
+        // the target is my leader
+        myParentUid() == uid
+        // or the target is a fellow member under the same leader
+        || (exists(/databases/$(database)/documents/users/$(uid))
+            && get(/databases/$(database)/documents/users/$(uid)).data.parentUid == myParentUid())
+      );
+    }
+
+    // Billing-controlled fields. Owners may update their own doc freely EXCEPT these —
+    // `plan`/`razorpay` are written only server-side (verifyRazorpaySubscription + the
+    // Razorpay webhook via the Admin SDK, which bypasses rules) so a user can't grant
+    // themselves a paid plan. Admins may still change them (the admin console).
+    function changesBillingFields() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(['plan', 'razorpay']);
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin() || isMyChild(uid) || sharesMyTeam(uid);
+      allow create: if isOwner(uid);
+      allow update: if isAdmin() || (isOwner(uid) && !changesBillingFields());
+      allow delete: if isOwner(uid) || isAdmin();
+
+      // Per-user workspace: leads, campaigns, conversations.
+      match /{collection}/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // Shared lead assignments. A leader (owner) assigns a lead to a teammate by email; the
+    // teammate reads it from their own account. Owner has full control; the assignee may only
+    // update the workflow status / a note (so the leader sees their progress).
+    match /assignments/{id} {
+      allow read: if isSignedIn() && (
+        resource.data.ownerUid == request.auth.uid ||
+        resource.data.assigneeUid == request.auth.uid ||
+        resource.data.assigneeEmail == myEmail()
+      );
+      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+      allow update: if isSignedIn() && (
+        request.resource.data.ownerUid == request.auth.uid ||
+        (
+          (resource.data.assigneeUid == request.auth.uid || resource.data.assigneeEmail == myEmail()) &&
+          request.resource.data.ownerUid == resource.data.ownerUid &&
+          request.resource.data.assigneeEmail == resource.data.assigneeEmail &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'note', 'updatedAt'])
+        )
+      );
+    }
+
+    // Team chat — one group channel per team, keyed by the leader's uid (teamId).
+    // Only members of that team may read/post, and only when the team is on the Agency plan.
+    function onTeam(teamId) {
+      return isSignedIn() && (request.auth.uid == teamId || myParentUid() == teamId);
+    }
+    function teamIsAgency(teamId) {
+      return exists(/databases/$(database)/documents/users/$(teamId))
+        && get(/databases/$(database)/documents/users/$(teamId)).data.plan == 'agency';
+    }
+    match /teamChats/{teamId}/messages/{msgId} {
+      allow read: if onTeam(teamId) && teamIsAgency(teamId);
+      allow create: if onTeam(teamId) && teamIsAgency(teamId)
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 4000;
+    }
+
+    // Reddit OAuth tokens — only Cloud Functions (Admin SDK) may access. Never the client.
+    match /redditTokens/{uid} {
+      allow read, write: if false;
+    }
+
+    // Gmail OAuth tokens — only Cloud Functions (Admin SDK) may access. Never the client.
+    match /gmailTokens/{uid} {
+      allow read, write: if false;
+    }
+
+    // Referral aggregates (click counts) — written/read only by Cloud Functions.
+    // Clients get their dashboard via the getReferralDashboard callable.
+    match /referrals/{code} {
+      allow read, write: if false;
+    }
+
+    // Razorpay subscription index — written/read only by Cloud Functions (Admin SDK).
+    match /razorpaySubscriptions/{id} {
+      allow read, write: if false;
+    }
+
+    // Client error logs — written only via the logClientError Cloud Function (Admin SDK).
+    // Never readable or directly writable by clients.
+    match /errorLogs/{id} {
+      allow read, write: if false;
+    }
+  }
+}
