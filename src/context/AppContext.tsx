@@ -1,16 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
-import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signInWithPopup,
-  signOut,
-  onAuthStateChanged,
-  updateProfile,
-  type User as FirebaseUser
-} from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { auth, googleProvider, db, functions } from '../lib/firebase';
+import { db, functions } from '../lib/firebase';
+import { apiLogin, apiSignup, apiLogout, apiMe, friendlyAuthError, type AuthUser, type Profile } from '../lib/auth-client';
 import { logError } from '../lib/logger';
 import { searchApifyPosts, type ApifyPlatform, type RawPost } from '../lib/apify';
 import { scoreLead } from '../lib/scoring';
@@ -267,7 +259,7 @@ interface AppContextType {
   isAuthLoading: boolean;
   authError: string | null;
   clearAuthError: () => void;
-  firebaseUser: FirebaseUser | null;
+  firebaseUser: AuthUser | null;
   userProfile: { name: string; email: string; photoURL?: string } | null;
   userStatus: 'active' | 'suspended';
   login: (email: string, password: string) => Promise<void>;
@@ -538,7 +530,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // --- Firebase Auth State ---
   // (declared early so the Reddit helpers below can read firebaseUser)
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<AuthUser | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -566,90 +558,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     : null;
 
-  // Helper to sync user profile in Firestore
-  const syncUserProfile = async (user: FirebaseUser, defaultName?: string) => {
-    try {
-      const userRef = doc(db, 'users', user.uid);
-      const userSnap = await getDoc(userRef);
-
-      if (!userSnap.exists()) {
-        await setDoc(userRef, {
-          id: user.uid,
-          name: user.displayName || defaultName || user.email?.split('@')[0] || 'User',
-          email: user.email || '',
-          plan: 'free',
-          status: 'active',
-          role: user.email === ADMIN_EMAIL ? 'admin' : 'user',
-          joinedAt: new Date().toISOString().split('T')[0]
-        });
-        // Attribute this new signup to the referrer whose link they arrived with.
-        try {
-          const refCode = typeof localStorage !== 'undefined' ? localStorage.getItem('pendingReferral') : null;
-          if (refCode) {
-            await httpsCallable(functions, 'claimReferral')({ code: refCode });
-            localStorage.removeItem('pendingReferral');
-          }
-        } catch (e) {
-          console.warn('referral claim failed (continuing):', e);
-        }
-      } else {
-        const data = userSnap.data();
-        if (!data.name || data.name === 'User') {
-          await updateDoc(userRef, {
-            name: user.displayName || defaultName || user.email?.split('@')[0] || 'User'
-          });
-        }
-      }
-    } catch (err) {
-      console.error("Error syncing user profile:", err);
-    }
+  // Apply the profile fields that used to arrive via the users/{uid} onSnapshot.
+  const applyProfile = (p: Profile) => {
+    setPlan(p.plan || 'free');
+    setUserStatus(p.status || 'active');
+    setUserRole(p.role === 'admin' ? 'admin' : 'user');
+    setRedditAccount((p.reddit as RedditAccount) || null);
+    setGmailAccount((p.gmail as GmailAccount) || null);
+    setMyTeamRole(p.teamRole || (p.parentUid ? 'member' : null));
+    setMyParentUid(p.parentUid || null);
   };
 
-  // Subscribe to Firebase auth state changes and sync user info real-time
+  const resetProfile = () => {
+    setPlan('free');
+    setUserStatus('active');
+    setUserRole('user');
+    setRedditAccount(null);
+    setGmailAccount(null);
+    setMyTeamRole(null);
+    setMyParentUid(null);
+  };
+
+  // Resume the session on load from the stored JWT (replaces onAuthStateChanged).
+  // Live profile updates (plan/role/etc) are re-fetched by the poller in Phase 3.
   useEffect(() => {
-    let unsubDoc: (() => void) | undefined;
-
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
-
-      if (user) {
-        // Sync profile to database
-        await syncUserProfile(user);
-
-        // Listen to changes on the user's document
-        const userRef = doc(db, 'users', user.uid);
-        unsubDoc = onSnapshot(userRef, (docSnap) => {
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            setPlan(data.plan || 'free');
-            setUserStatus(data.status || 'active');
-            setUserRole(data.role === 'admin' ? 'admin' : 'user');
-            setRedditAccount((data.reddit as RedditAccount) || null);
-            setGmailAccount((data.gmail as GmailAccount) || null);
-            setMyTeamRole(data.teamRole === 'leader' ? 'leader' : data.teamRole === 'member' ? 'member' : (data.parentUid ? 'member' : null));
-            setMyParentUid((data.parentUid as string) || null);
-          }
-          setIsAuthLoading(false);
-        }, (err) => {
-          console.error("Error listening to user doc:", err);
-          setIsAuthLoading(false);
-        });
-      } else {
-        setPlan('free');
-        setUserStatus('active');
-        setUserRole('user');
-        setRedditAccount(null);
-        setGmailAccount(null);
-        setMyTeamRole(null);
-        setMyParentUid(null);
-        setIsAuthLoading(false);
-      }
-    });
-
-    return () => {
-      unsubscribe();
-      if (unsubDoc) unsubDoc();
-    };
+    let cancelled = false;
+    (async () => {
+      const res = await apiMe();
+      if (cancelled) return;
+      if (res) { setFirebaseUser(res.user); applyProfile(res.profile); }
+      else { setFirebaseUser(null); resetProfile(); }
+      setIsAuthLoading(false);
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // --- Reddit OAuth helpers ---
@@ -1051,29 +992,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [firebaseUser?.uid]);
 
 
-  // --- Auth functions (Firebase) ---
+  // --- Auth functions (Turso + Vercel JWT) ---
   const login = async (email: string, password: string) => {
     setAuthError(null);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const res = await apiLogin(email, password);
+      setFirebaseUser(res.user);
+      applyProfile(res.profile);
     } catch (err: any) {
-      // If admin account doesn't exist yet, auto-create it on first use
-      if (
-        email === ADMIN_EMAIL &&
-        (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential')
-      ) {
-        try {
-          const cred = await createUserWithEmailAndPassword(auth, email, password);
-          await updateProfile(cred.user, { displayName: 'Admin' });
-          await syncUserProfile(cred.user, 'Admin');
-          return; // success — onAuthStateChanged will fire
-        } catch (createErr: any) {
-          const msg = friendlyAuthError(createErr.code);
-          setAuthError(msg);
-          throw new Error(msg);
-        }
-      }
-      const msg = friendlyAuthError(err.code);
+      const msg = friendlyAuthError(err?.code);
       setAuthError(msg);
       throw new Error(msg);
     }
@@ -1082,32 +1009,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const signup = async (name: string, email: string, password: string) => {
     setAuthError(null);
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
-      await updateProfile(cred.user, { displayName: name });
-      await syncUserProfile(cred.user, name);
-      // Force refresh so displayName is picked up immediately
-      setFirebaseUser({ ...cred.user, displayName: name } as FirebaseUser);
+      const res = await apiSignup(name, email, password);
+      setFirebaseUser(res.user);
+      applyProfile(res.profile);
+      // TODO(Phase 4): attribute pending referral (localStorage 'pendingReferral') via the referral API.
     } catch (err: any) {
-      const msg = friendlyAuthError(err.code);
+      const msg = friendlyAuthError(err?.code);
       setAuthError(msg);
       throw new Error(msg);
     }
   };
 
   const loginWithGoogle = async () => {
+    // Google sign-in is reconnected in Phase 4 (OAuth). For now, guide to email/password.
     setAuthError(null);
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (err: any) {
-      if (err.code === 'auth/popup-closed-by-user') return;
-      const msg = friendlyAuthError(err.code);
-      setAuthError(msg);
-      throw new Error(msg);
-    }
+    notify('Google sign-in is being reconnected — please use email & password for now.', 'info', 6000);
+    throw new Error('Google sign-in is temporarily unavailable.');
   };
 
   const logout = async () => {
-    await signOut(auth);
+    await apiLogout();
+    setFirebaseUser(null);
+    resetProfile();
   };
 
   const clearAuthError = () => setAuthError(null);
@@ -2068,27 +1991,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     </AppContext.Provider>
   );
 };
-
-function friendlyAuthError(code: string): string {
-  switch (code) {
-    case 'auth/user-not-found':
-    case 'auth/wrong-password':
-    case 'auth/invalid-credential':
-      return 'Invalid email or password. Please try again.';
-    case 'auth/email-already-in-use':
-      return 'An account with this email already exists. Try logging in instead.';
-    case 'auth/weak-password':
-      return 'Password should be at least 6 characters.';
-    case 'auth/invalid-email':
-      return 'Please enter a valid email address.';
-    case 'auth/too-many-requests':
-      return 'Too many failed attempts. Please try again later.';
-    case 'auth/network-request-failed':
-      return 'Network error. Please check your connection.';
-    default:
-      return 'Something went wrong. Please try again.';
-  }
-}
 
 export const useApp = () => {
   const context = useContext(AppContext);
