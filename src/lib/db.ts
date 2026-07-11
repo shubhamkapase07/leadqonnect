@@ -3,13 +3,10 @@
 // state to it via diff-syncs (only changed/removed docs are written). localStorage stays as an
 // offline cache.
 
-import {
-  collection, doc,
-  setDoc, deleteDoc, updateDoc, onSnapshot, query, where, orderBy,
-} from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from './firebase';
-import { apiGet, apiPost } from './api';
+import { apiGet, apiPost, poll } from './api';
 
 export type SyncCollectionName = 'leads' | 'campaigns' | 'conversations' | 'sequences';
 const COLLECTIONS: SyncCollectionName[] = ['leads', 'campaigns', 'conversations', 'sequences'];
@@ -131,22 +128,22 @@ export async function updateAssignmentStatus(id: string, status: string, note?: 
   await updateDoc(doc(db, 'assignments', id), patch);
 }
 
-/** Live subscription to leads assigned TO me by email (covers invites not yet accepted). */
-export function subscribeAssignmentsForAssignee(email: string, cb: (rows: Assignment[]) => void) {
-  const q = query(collection(db, 'assignments'), where('assigneeEmail', '==', normEmail(email)));
-  return onSnapshot(q, snap => cb(snap.docs.map(d => d.data() as Assignment)), err => console.error('assignments(email) sub failed:', err));
+// Leads assigned TO me are matched by uid OR email in a single endpoint. The uid-based
+// subscription returns the full set; the email-based one is a no-op to avoid double-polling
+// (the caller merges/dedupes both by doc id, so returning [] here is harmless).
+export function subscribeAssignmentsForAssignee(_email: string, cb: (rows: Assignment[]) => void) {
+  cb([]);
+  return () => {};
 }
 
-/** Live subscription to leads assigned TO me by uid (bulletproof once the invite is accepted). */
-export function subscribeAssignmentsForAssigneeUid(uid: string, cb: (rows: Assignment[]) => void) {
-  const q = query(collection(db, 'assignments'), where('assigneeUid', '==', uid));
-  return onSnapshot(q, snap => cb(snap.docs.map(d => d.data() as Assignment)), err => console.error('assignments(uid) sub failed:', err));
+/** Poll for leads assigned TO me (by uid or email). */
+export function subscribeAssignmentsForAssigneeUid(_uid: string, cb: (rows: Assignment[]) => void) {
+  return poll(() => apiGet<Assignment[]>('/api/assignments/assigned-to-me'), cb);
 }
 
-/** Live subscription to the assignments I created (as owner) — to see assignees' progress. */
-export function subscribeAssignmentsForOwner(uid: string, cb: (rows: Assignment[]) => void) {
-  const q = query(collection(db, 'assignments'), where('ownerUid', '==', uid));
-  return onSnapshot(q, snap => cb(snap.docs.map(d => d.data() as Assignment)), err => console.error('assignments(owner) sub failed:', err));
+/** Poll for the assignments I created (as owner) — to see assignees' progress. */
+export function subscribeAssignmentsForOwner(_uid: string, cb: (rows: Assignment[]) => void) {
+  return poll(() => apiGet<Assignment[]>('/api/assignments/owned'), cb);
 }
 
 // --- Team (parent → child) account provisioning ----------------------------------------------
@@ -186,35 +183,14 @@ export interface TeamRosterUser {
   plan?: string;        // the user's subscription tier (used to gate team chat by the leader's plan)
 }
 
-function toRosterUser(uid: string, data: any): TeamRosterUser {
-  return {
-    uid,
-    name: data?.name || data?.email?.split('@')?.[0] || 'Teammate',
-    email: data?.email || '',
-    role: data?.role && data.role !== 'user' && data.role !== 'admin' ? data.role : undefined,
-    teamRole: data?.teamRole,
-    parentUid: data?.parentUid,
-    plan: data?.plan,
-  };
-}
-
-/** Live subscription to a single user doc (used to watch the team leader). */
+/** Poll a single user's roster projection (used to watch the team leader). */
 export function subscribeUserDoc(uid: string, cb: (user: TeamRosterUser | null) => void) {
-  return onSnapshot(
-    doc(db, 'users', uid),
-    snap => cb(snap.exists() ? toRosterUser(snap.id, snap.data()) : null),
-    err => console.error('user doc sub failed:', err),
-  );
+  return poll(() => apiGet<TeamRosterUser | null>(`/api/user?uid=${encodeURIComponent(uid)}`), cb, 10000);
 }
 
-/** Live subscription to all members under a leader (everyone with parentUid == leaderUid). */
+/** Poll all members under a leader (everyone with parentUid == leaderUid). */
 export function subscribeTeamRoster(leaderUid: string, cb: (rows: TeamRosterUser[]) => void) {
-  const q = query(collection(db, 'users'), where('parentUid', '==', leaderUid));
-  return onSnapshot(
-    q,
-    snap => cb(snap.docs.map(d => toRosterUser(d.id, d.data()))),
-    err => console.error('team roster sub failed:', err),
-  );
+  return poll(() => apiGet<TeamRosterUser[]>(`/api/team/roster?leaderUid=${encodeURIComponent(leaderUid)}`), cb, 10000);
 }
 
 // --- Team chat (Agency) ----------------------------------------------------------------------
@@ -229,23 +205,17 @@ export interface TeamChatMessage {
   createdAt: number;   // ms epoch, used for ordering
 }
 
-/** Live subscription to a team's chat messages, oldest first. */
+/** Poll a team's chat messages, oldest first (faster cadence for a chat feel). */
 export function subscribeTeamChat(teamId: string, cb: (msgs: TeamChatMessage[]) => void) {
-  const q = query(collection(db, 'teamChats', teamId, 'messages'), orderBy('createdAt', 'asc'));
-  return onSnapshot(
-    q,
-    snap => cb(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<TeamChatMessage, 'id'>) }))),
-    err => console.error('team chat sub failed:', err),
-  );
+  return poll(() => apiGet<TeamChatMessage[]>(`/api/team/chat?teamId=${encodeURIComponent(teamId)}`), cb, 3000);
 }
 
-/** Post a message to a team's chat channel. */
+/** Post a message to a team's chat channel (sender is derived from the auth token). */
 export async function sendTeamChatMessage(
   teamId: string,
   msg: { senderUid: string; senderName: string; text: string },
 ): Promise<void> {
-  const id = 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-  await setDoc(doc(db, 'teamChats', teamId, 'messages', id), { ...msg, createdAt: Date.now() });
+  await apiPost('/api/team/chat', { teamId, text: msg.text });
 }
 
 // --- Outreach sequence enrollments -----------------------------------------------------------
@@ -284,11 +254,7 @@ export async function stopEnrollment(uid: string, id: string): Promise<void> {
   });
 }
 
-/** Live subscription to all of a user's sequence enrollments. */
-export function subscribeEnrollments(uid: string, cb: (rows: SequenceEnrollment[]) => void) {
-  return onSnapshot(
-    collection(db, 'users', uid, 'sequenceEnrollments'),
-    snap => cb(snap.docs.map(d => d.data() as SequenceEnrollment)),
-    err => console.error('enrollments sub failed:', err),
-  );
+/** Poll all of the user's sequence enrollments. */
+export function subscribeEnrollments(_uid: string, cb: (rows: SequenceEnrollment[]) => void) {
+  return poll(() => apiGet<SequenceEnrollment[]>('/api/enrollments'), cb);
 }

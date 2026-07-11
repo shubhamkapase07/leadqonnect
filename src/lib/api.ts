@@ -47,6 +47,25 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return data as T;
 }
 
+/**
+ * Poll `fetcher` on an interval and push results to `cb`. Returns an unsubscribe function.
+ * Drop-in replacement for Firestore onSnapshot subscriptions. Fires once immediately.
+ */
+export function poll<T>(fetcher: () => Promise<T>, cb: (v: T) => void, intervalMs = 6000): () => void {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const tick = async () => {
+    if (stopped) return;
+    try {
+      const v = await fetcher();
+      if (!stopped) cb(v);
+    } catch { /* transient — keep polling */ }
+    if (!stopped) timer = setTimeout(tick, intervalMs);
+  };
+  tick();
+  return () => { stopped = true; if (timer) clearTimeout(timer); };
+}
+
 export const apiGet = <T>(path: string) => request<T>("GET", path);
 export const apiPost = <T>(path: string, body?: unknown) => request<T>("POST", path, body);
 export const apiPatch = <T>(path: string, body?: unknown) => request<T>("PATCH", path, body);

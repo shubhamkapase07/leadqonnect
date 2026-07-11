@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
-import { doc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, deleteField } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../lib/firebase';
 import { apiLogin, apiSignup, apiLogout, apiMe, friendlyAuthError, type AuthUser, type Profile } from '../lib/auth-client';
+import { poll, apiGet } from '../lib/api';
 import { logError } from '../lib/logger';
 import { searchApifyPosts, type ApifyPlatform, type RawPost } from '../lib/apify';
 import { scoreLead } from '../lib/scoring';
@@ -775,38 +776,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     window.history.replaceState({}, '', clean);
   }, []);
 
-  // Listen to all users if current user is admin (real-time subscription)
+  // Poll all users while in admin mode (replaces the Firestore all-users snapshot).
   useEffect(() => {
     if (!isAdminMode) {
       setAllUsers([]);
       return;
     }
-    const usersCol = collection(db, 'users');
-    const unsubscribe = onSnapshot(usersCol, (snapshot) => {
-      const usersList: AdminUser[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.email !== ADMIN_EMAIL) {
-          usersList.push({
-            id: doc.id,
-            name: data.name || 'User',
-            email: data.email || '',
-            plan: data.plan || 'free',
-            status: data.status || 'active',
-            joinedAt: data.joinedAt || '',
-            role: data.role === 'admin' ? 'admin' : 'user',
-            teamRole: data.teamRole === 'leader' ? 'leader' : data.teamRole === 'member' ? 'member' : (data.parentUid ? 'member' : undefined),
-            parentUid: (data.parentUid as string) || undefined,
-            razorpay: data.razorpay || undefined,
-          });
-        }
-      });
-      setAllUsers(usersList);
-    }, (err) => {
-      console.error("Error listening to all users:", err);
-    });
-    return unsubscribe;
+    return poll(() => apiGet<AdminUser[]>('/api/admin/users'), rows => setAllUsers(rows), 10000);
   }, [isAdminMode]);
+
+  // Poll the profile so plan/role/status/OAuth changes reflect without a reload
+  // (replaces the live users/{uid} onSnapshot).
+  useEffect(() => {
+    if (!firebaseUser) return;
+    let cancelled = false;
+    const id = setInterval(async () => {
+      const res = await apiMe();
+      if (!cancelled && res) applyProfile(res.profile);
+    }, 20000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [firebaseUser?.uid]);
 
   // Sync plan per user in local storage as backup
   useEffect(() => {
