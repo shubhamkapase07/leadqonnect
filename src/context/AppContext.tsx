@@ -1,6 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '../lib/firebase';
 import { apiLogin, apiSignup, apiLogout, apiMe, friendlyAuthError, type AuthUser, type Profile } from '../lib/auth-client';
 import { poll, apiGet, apiPost } from '../lib/api';
 import { logError } from '../lib/logger';
@@ -1133,9 +1131,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       await loadRazorpay();
 
-      const create = httpsCallable(functions, 'createRazorpaySubscription');
-      const created: any = await create({ tier });
-      const { subscriptionId, keyId } = (created.data || {}) as { subscriptionId?: string; keyId?: string };
+      const created = await apiPost<{ subscriptionId?: string; keyId?: string }>('/api/razorpay/create', { tier });
+      const { subscriptionId, keyId } = created || {};
       if (!subscriptionId || !keyId) {
         throw new Error('Could not start checkout. Billing may not be configured yet.');
       }
@@ -1153,8 +1150,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notes: { tier },
       });
 
-      const verify = httpsCallable(functions, 'verifyRazorpaySubscription');
-      await verify({
+      await apiPost('/api/razorpay/verify', {
         razorpay_payment_id: result.razorpay_payment_id,
         razorpay_subscription_id: result.razorpay_subscription_id,
         razorpay_signature: result.razorpay_signature,
