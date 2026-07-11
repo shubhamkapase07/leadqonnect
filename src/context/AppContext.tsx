@@ -3,7 +3,7 @@ import { doc, updateDoc, deleteDoc, deleteField } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../lib/firebase';
 import { apiLogin, apiSignup, apiLogout, apiMe, friendlyAuthError, type AuthUser, type Profile } from '../lib/auth-client';
-import { poll, apiGet } from '../lib/api';
+import { poll, apiGet, apiPost } from '../lib/api';
 import { logError } from '../lib/logger';
 import { searchApifyPosts, type ApifyPlatform, type RawPost } from '../lib/apify';
 import { scoreLead } from '../lib/scoring';
@@ -1596,13 +1596,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     //    AI qualification is a Pro feature — Free stays on the deterministic engine.
     if (capabilities.ai) {
       try {
-        const res: any = await httpsCallable(functions, 'qualifyLeadAI')({
+        const res: any = await apiPost('/api/qualify', {
           lead: { platform: lead.platform, author: lead.author, handle: lead.handle, title: lead.title, content: lead.content },
           campaign: campaign
             ? { name: campaign.name, serviceOffered: campaign.serviceOffered, industry: campaign.industry, keywords: campaign.keywords }
             : { keywords: lead.keywords },
         });
-        const r = res?.data?.result;
+        const r = res?.result;
         if (r) {
           usedAI = true;
           q = {
@@ -1639,7 +1639,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } : l));
 
     const fallbackMsg = capabilities.ai
-      ? 'Lead scored. Add an Anthropic API key to enable AI qualification (see SETUP.md).'
+      ? 'Lead scored with our intent engine (AI qualification was unavailable — check the Gemini API key).'
       : 'Lead scored with our intent engine. Upgrade to Pro for AI qualification.';
     notify(
       usedAI ? 'Lead qualified by AI.' : fallbackMsg,

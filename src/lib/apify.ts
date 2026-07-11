@@ -1,12 +1,7 @@
-// Lead scraping client — calls the server-side `scrapeLeads` Cloud Function.
-//
-// The actual Apify integration (token, actors, normalization) lives in
-// functions/src/scan.ts. The token never reaches the browser; this module is just a thin
-// typed wrapper around the callable so the rest of the app keeps the same API it had when
-// scraping ran client-side.
+// Lead scraping client — calls the backend /api/scan endpoint (free Reddit RSS engine).
+// Kept the filename + searchApifyPosts signature so the rest of the app is unchanged.
 
-import { httpsCallable } from 'firebase/functions';
-import { functions } from './firebase';
+import { apiPost } from './api';
 
 export interface RawPost {
   id: string;
@@ -22,9 +17,9 @@ export interface RawPost {
 export type ApifyPlatform = 'reddit' | 'twitter' | 'linkedin';
 
 /**
- * Scrape one platform for one keyword via the backend proxy.
- * Returns [] (never throws) when scanning is unconfigured or the run fails, so the caller
- * can treat "no results" uniformly.
+ * Scrape one platform for one keyword via the backend. Returns [] (never throws) when a run
+ * fails, so callers can treat "no results" uniformly. Reddit is free; twitter/linkedin
+ * currently return [] (no free source).
  */
 export async function searchApifyPosts(
   platform: ApifyPlatform,
@@ -32,14 +27,10 @@ export async function searchApifyPosts(
   timeframe = 'week',
 ): Promise<RawPost[]> {
   try {
-    const call = httpsCallable<
-      { platform: ApifyPlatform; keyword: string; timeframe: string },
-      { ok: boolean; posts: RawPost[] }
-    >(functions, 'scrapeLeads');
-    const res = await call({ platform, keyword, timeframe });
-    return Array.isArray(res.data?.posts) ? res.data.posts : [];
+    const res = await apiPost<{ ok: boolean; posts: RawPost[] }>('/api/scan', { platform, keyword, timeframe });
+    return Array.isArray(res?.posts) ? res.posts : [];
   } catch (err) {
-    console.error(`[scrapeLeads] ${platform} failed:`, err);
+    console.error(`[scan] ${platform} failed:`, err);
     return [];
   }
 }
