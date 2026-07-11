@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Free personal lead-finding engine — Reddit (public API) -> Gemini scoring -> Turso -> Vercel dashboard.",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "init-db": "node --env-file-if-exists=.env --import tsx src/init-db.ts",
     "scan": "node --env-file-if-exists=.env --import tsx src/cli.ts",
