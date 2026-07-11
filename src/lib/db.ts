@@ -4,11 +4,12 @@
 // offline cache.
 
 import {
-  collection, getDocs, doc, writeBatch,
+  collection, doc,
   setDoc, deleteDoc, updateDoc, onSnapshot, query, where, orderBy,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from './firebase';
+import { apiGet, apiPost } from './api';
 
 export type SyncCollectionName = 'leads' | 'campaigns' | 'conversations' | 'sequences';
 const COLLECTIONS: SyncCollectionName[] = ['leads', 'campaigns', 'conversations', 'sequences'];
@@ -30,40 +31,30 @@ function clean<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
 }
 
-/** Load all workspace collections for a user. Returns plain objects keyed by collection name. */
-export async function loadWorkspace(uid: string): Promise<Record<SyncCollectionName, any[]>> {
-  const out = { leads: [], campaigns: [], conversations: [], sequences: [] } as Record<SyncCollectionName, any[]>;
-  await Promise.all(
-    COLLECTIONS.map(async (name) => {
-      const snap = await getDocs(collection(db, 'users', uid, name));
-      out[name] = snap.docs.map((d) => d.data());
-    })
-  );
-  return out;
-}
-
-async function commitInChunks(ops: Array<(b: ReturnType<typeof writeBatch>) => void>) {
-  // Firestore batches cap at 500 ops; chunk well under that.
-  for (let i = 0; i < ops.length; i += 400) {
-    const batch = writeBatch(db);
-    for (const op of ops.slice(i, i + 400)) op(batch);
-    await batch.commit();
-  }
+/** Load all workspace collections for the signed-in user (uid comes from the token). */
+export async function loadWorkspace(_uid: string): Promise<Record<SyncCollectionName, any[]>> {
+  const data = await apiGet<Record<SyncCollectionName, any[]>>('/api/workspace/load');
+  return {
+    leads: data.leads || [],
+    campaigns: data.campaigns || [],
+    conversations: data.conversations || [],
+    sequences: data.sequences || [],
+  };
 }
 
 /**
- * Diff-sync an array of items to users/{uid}/{name}. Only writes docs whose JSON changed
- * since the last sync, and deletes docs that disappeared. `lastMap` (id -> JSON) is the
- * caller-held memory of what's already in Firestore — seed it from loadWorkspace().
+ * Diff-sync an array of items to the backend. Only sends docs whose JSON changed since the
+ * last sync, and deletes docs that disappeared. `lastMap` (id -> JSON) is the caller-held
+ * memory of what's already persisted — seed it from loadWorkspace(). Same signature as before.
  */
 export async function syncCollection(
-  uid: string,
+  _uid: string,
   name: SyncCollectionName,
   items: any[],
   idKey: string,
   lastMap: Map<string, string>,
 ): Promise<void> {
-  const ops: Array<(b: ReturnType<typeof writeBatch>) => void> = [];
+  const sets: Array<{ id: string; item: any }> = [];
   const currentIds = new Set<string>();
 
   for (const item of items) {
@@ -72,22 +63,22 @@ export async function syncCollection(
     currentIds.add(id);
     const json = JSON.stringify(item);
     if (lastMap.get(id) !== json) {
-      const ref = doc(db, 'users', uid, name, safeDocId(id));
-      const data = clean(item);
-      ops.push((b) => b.set(ref, data));
+      sets.push({ id, item: clean(item) });
       lastMap.set(id, json);
     }
   }
 
+  const deletes: string[] = [];
   for (const id of [...lastMap.keys()]) {
     if (!currentIds.has(id)) {
-      const ref = doc(db, 'users', uid, name, safeDocId(id));
-      ops.push((b) => b.delete(ref));
+      deletes.push(id);
       lastMap.delete(id);
     }
   }
 
-  if (ops.length) await commitInChunks(ops);
+  if (sets.length || deletes.length) {
+    await apiPost('/api/workspace/sync', { collection: name, sets, deletes });
+  }
 }
 
 /** Build a fresh id->JSON map from loaded items (to seed lastMap without re-uploading). */
