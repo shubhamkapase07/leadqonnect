@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
-import { doc, updateDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../lib/firebase';
+import { functions } from '../lib/firebase';
 import { apiLogin, apiSignup, apiLogout, apiMe, friendlyAuthError, type AuthUser, type Profile } from '../lib/auth-client';
 import { poll, apiGet, apiPost } from '../lib/api';
 import { logError } from '../lib/logger';
@@ -604,17 +603,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
     const clientId = import.meta.env.VITE_REDDIT_CLIENT_ID as string | undefined;
-    const redirectUri = import.meta.env.VITE_REDDIT_REDIRECT_URI as string | undefined;
-    if (!clientId || !redirectUri || clientId.includes('PASTE_')) {
-      notify('Reddit connection isn’t configured yet. Add your VITE_REDDIT_CLIENT_ID and deploy the Cloud Functions (see SETUP.md).', 'error', 7000);
+    if (!clientId || clientId.includes('PASTE_')) {
+      notify('Reddit connection isn’t configured yet. Add your VITE_REDDIT_CLIENT_ID and REDDIT_CLIENT_ID/SECRET + APP_URL on Vercel.', 'error', 7000);
       return;
     }
     setRedditConnecting(true);
     try {
-      // Store a one-time nonce on the user doc; the callback function verifies it (CSRF guard).
-      const nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
-      await updateDoc(doc(db, 'users', firebaseUser.uid), { redditOauthNonce: nonce });
-      const state = btoa(JSON.stringify({ uid: firebaseUser.uid, nonce }));
+      // Server stores a one-time nonce and returns the state + the callback redirect URI.
+      const { state, redirectUri } = await apiPost<{ state: string; redirectUri: string }>('/api/oauth/reddit/action', { action: 'start' });
       const params = new URLSearchParams({
         client_id: clientId,
         response_type: 'code',
@@ -633,7 +629,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const disconnectReddit = async () => {
     setRedditConnecting(true);
     try {
-      await httpsCallable(functions, 'redditDisconnect')();
+      await apiPost('/api/oauth/reddit/action', { action: 'disconnect' });
       setRedditAccount(null);
     } catch (err) {
       console.error('disconnectReddit failed:', err);
@@ -647,8 +643,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       openUpgradeModal();
       throw new Error('Replying from your account is a Pro feature. Upgrade to Pro to engage leads.');
     }
-    const res = await httpsCallable(functions, 'redditPostComment')({ thingId, text });
-    return res.data as { ok: boolean; permalink?: string };
+    return apiPost<{ ok: boolean; permalink?: string }>('/api/oauth/reddit/action', { action: 'comment', thingId, text });
   };
 
   const sendRedditDm = async (to: string, subject: string, text: string) => {
@@ -656,8 +651,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       openUpgradeModal();
       throw new Error('Sending DMs from your account is a Pro feature. Upgrade to Pro to engage leads.');
     }
-    const res = await httpsCallable(functions, 'redditSendMessage')({ to, subject, text });
-    return res.data as { ok: boolean };
+    return apiPost<{ ok: boolean }>('/api/oauth/reddit/action', { action: 'message', to, subject, text });
   };
 
   // --- Gmail OAuth helpers ---
@@ -670,17 +664,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
-    const redirectUri = import.meta.env.VITE_GOOGLE_REDIRECT_URI as string | undefined;
-    if (!clientId || !redirectUri || clientId.includes('your_google')) {
-      notify('Gmail connection isn’t configured yet. Add your VITE_GOOGLE_CLIENT_ID and deploy the Cloud Functions (see SETUP.md).', 'error', 7000);
+    if (!clientId || clientId.includes('your_google')) {
+      notify('Gmail connection isn’t configured yet. Add your VITE_GOOGLE_CLIENT_ID and GOOGLE_CLIENT_ID/SECRET + APP_URL on Vercel.', 'error', 7000);
       return;
     }
     setGmailConnecting(true);
     try {
-      // One-time nonce on the user doc; the callback function verifies it (CSRF guard).
-      const nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
-      await updateDoc(doc(db, 'users', firebaseUser.uid), { gmailOauthNonce: nonce });
-      const state = btoa(JSON.stringify({ uid: firebaseUser.uid, nonce }));
+      const { state, redirectUri } = await apiPost<{ state: string; redirectUri: string }>('/api/oauth/gmail/action', { action: 'start' });
       const params = new URLSearchParams({
         client_id: clientId,
         response_type: 'code',
@@ -701,7 +691,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const disconnectGmail = async () => {
     setGmailConnecting(true);
     try {
-      await httpsCallable(functions, 'gmailDisconnect')();
+      await apiPost('/api/oauth/gmail/action', { action: 'disconnect' });
       setGmailAccount(null);
     } catch (err) {
       console.error('disconnectGmail failed:', err);
@@ -715,8 +705,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       openUpgradeModal();
       throw new Error('Emailing leads from your account is a Pro feature. Upgrade to Pro to engage leads.');
     }
-    const res = await httpsCallable(functions, 'gmailSendEmail')({ to, subject, text, html });
-    return res.data as { ok: boolean; id?: string };
+    return apiPost<{ ok: boolean; id?: string }>('/api/oauth/gmail/action', { action: 'send', to, subject, text, html });
   };
 
   // Surface the OAuth round-trip result (?reddit=connected|denied|error) as an alert, then clean the URL.
@@ -767,7 +756,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem('pendingReferral', code);
       const seenKey = `refClick_${code}`;
       if (!localStorage.getItem(seenKey)) {
-        httpsCallable(functions, 'trackReferralClick')({ code }).catch(() => undefined);
+        apiPost('/api/referrals', { action: 'track', code }).catch(() => undefined);
         localStorage.setItem(seenKey, '1');
       }
     } catch { /* localStorage unavailable — skip */ }
@@ -1001,7 +990,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const res = await apiSignup(name, email, password);
       setFirebaseUser(res.user);
       applyProfile(res.profile);
-      // TODO(Phase 4): attribute pending referral (localStorage 'pendingReferral') via the referral API.
+      // Attribute a pending referral (arrived via ?ref=CODE) to the referrer.
+      try {
+        const refCode = localStorage.getItem('pendingReferral');
+        if (refCode) {
+          await apiPost('/api/referrals', { action: 'claim', code: refCode }).catch(() => undefined);
+          localStorage.removeItem('pendingReferral');
+        }
+      } catch { /* ignore */ }
     } catch (err: any) {
       const msg = friendlyAuthError(err?.code);
       setAuthError(msg);

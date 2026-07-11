@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Gift, Award, Copy, Check, Loader2, RefreshCw } from 'lucide-react';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '../../lib/firebase';
+import { apiPost } from '../../lib/api';
 
 interface ReferralDashboard {
   code: string;
@@ -24,11 +23,11 @@ export const ReferView: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await httpsCallable(functions, 'getReferralDashboard')();
-      setData(res.data as ReferralDashboard);
+      const res = await apiPost<ReferralDashboard>('/api/referrals', { action: 'dashboard' });
+      setData(res);
     } catch (err) {
       console.error('getReferralDashboard failed:', err);
-      setError('Couldn’t load your referral dashboard. Make sure the Cloud Functions are deployed, then retry.');
+      setError('Couldn’t load your referral dashboard. Please retry.');
     } finally {
       setLoading(false);
     }
