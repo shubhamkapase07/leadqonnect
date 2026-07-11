@@ -3,9 +3,6 @@
 // state to it via diff-syncs (only changed/removed docs are written). localStorage stays as an
 // offline cache.
 
-import { doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { db, functions } from './firebase';
 import { apiGet, apiPost, poll } from './api';
 
 export type SyncCollectionName = 'leads' | 'campaigns' | 'conversations' | 'sequences';
@@ -113,19 +110,17 @@ export const normEmail = (email: string) => (email || '').trim().toLowerCase();
 
 /** Create or update the shared assignment record for a lead. */
 export async function upsertAssignment(a: Assignment): Promise<void> {
-  await setDoc(doc(db, 'assignments', a.id), clean(a));
+  await apiPost('/api/assignments/mutate', { action: 'upsert', assignment: clean(a) });
 }
 
 /** Remove a lead's shared assignment (on unassign or lead deletion). */
-export async function deleteAssignment(ownerUid: string, leadId: string): Promise<void> {
-  await deleteDoc(doc(db, 'assignments', assignmentDocId(ownerUid, leadId)));
+export async function deleteAssignment(_ownerUid: string, leadId: string): Promise<void> {
+  await apiPost('/api/assignments/mutate', { action: 'delete', leadId });
 }
 
 /** Assignee-side: update only the workflow status / note. */
 export async function updateAssignmentStatus(id: string, status: string, note?: string): Promise<void> {
-  const patch: Record<string, unknown> = { status, updatedAt: new Date().toISOString() };
-  if (note !== undefined) patch.note = note;
-  await updateDoc(doc(db, 'assignments', id), patch);
+  await apiPost('/api/assignments/mutate', { action: 'status', id, status, note });
 }
 
 // Leads assigned TO me are matched by uid OR email in a single endpoint. The uid-based
@@ -154,19 +149,17 @@ export interface CreatedMember { ok: boolean; uid: string; email: string; tempPa
 
 /** Create a child teammate account. Returns the new uid + a temp password to share with them. */
 export async function createTeamMemberAccount(input: { name: string; email: string; role: string }): Promise<CreatedMember> {
-  const res = await httpsCallable(functions, 'createTeamMember')(input);
-  return res.data as CreatedMember;
+  return apiPost<CreatedMember>('/api/team/manage', { action: 'create', ...input });
 }
 
-/** Delete a child teammate account (auth user + user doc). */
+/** Delete a child teammate account. */
 export async function deleteTeamMemberAccount(uid: string): Promise<void> {
-  await httpsCallable(functions, 'deleteTeamMember')({ uid });
+  await apiPost('/api/team/manage', { action: 'delete', uid });
 }
 
 /** Reset a child's password; returns a fresh temp password to share. */
 export async function resetTeamMemberPassword(uid: string): Promise<{ ok: boolean; tempPassword: string }> {
-  const res = await httpsCallable(functions, 'resetTeamMemberPassword')({ uid });
-  return res.data as { ok: boolean; tempPassword: string };
+  return apiPost<{ ok: boolean; tempPassword: string }>('/api/team/manage', { action: 'reset', uid });
 }
 
 // --- Team roster (leader + members), driven by users/{uid}.parentUid -------------------------
@@ -240,18 +233,14 @@ export interface SequenceEnrollment {
   lastError?: string;
 }
 
-const enrollmentId = (leadId: string, sequenceId: string) => safeDocId(`${leadId}__${sequenceId}`);
-
-/** Enroll a lead into a sequence (creates the server-driven enrollment doc). */
-export async function createEnrollment(uid: string, e: SequenceEnrollment): Promise<void> {
-  await setDoc(doc(db, 'users', uid, 'sequenceEnrollments', enrollmentId(e.leadId, e.sequenceId)), clean(e));
+/** Enroll a lead into a sequence (creates the server-driven enrollment). */
+export async function createEnrollment(_uid: string, e: SequenceEnrollment): Promise<void> {
+  await apiPost('/api/enroll', { action: 'create', enrollment: clean(e) });
 }
 
 /** Stop an active enrollment (client-initiated cancel). */
-export async function stopEnrollment(uid: string, id: string): Promise<void> {
-  await updateDoc(doc(db, 'users', uid, 'sequenceEnrollments', safeDocId(id)), {
-    status: 'stopped', updatedAt: new Date().toISOString(),
-  });
+export async function stopEnrollment(_uid: string, id: string): Promise<void> {
+  await apiPost('/api/enroll', { action: 'stop', id });
 }
 
 /** Poll all of the user's sequence enrollments. */

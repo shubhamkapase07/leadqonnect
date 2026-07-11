@@ -9,8 +9,7 @@
 // It adds no third-party dependency. To plug in Sentry/Datadog later, implement a sink
 // and pass it to `initErrorMonitoring({ sink })` — the call sites don't change.
 
-import { httpsCallable } from 'firebase/functions';
-import { functions } from './firebase';
+import { apiPost } from './api';
 
 export type LogLevel = 'error' | 'warn' | 'info';
 
@@ -35,14 +34,14 @@ let lastRemoteAt = 0;
 let remoteSink: Sink | null = null;
 let initialized = false;
 
-/** The default sink: fire-and-forget to a callable that persists the error server-side. */
-const firebaseSink: Sink = (entry) => {
+/** The default sink: fire-and-forget to the /api/log endpoint that persists errors server-side. */
+const remoteApiSink: Sink = (entry) => {
   const now = Date.now();
   if (now - lastRemoteAt < REMOTE_MIN_INTERVAL_MS) return; // throttled
   lastRemoteAt = now;
   // Never let logging throw or block; swallow everything.
   try {
-    httpsCallable(functions, 'logClientError')({
+    apiPost('/api/log', {
       level: entry.level,
       context: entry.context,
       message: entry.message,
@@ -105,7 +104,7 @@ export function getRecentLogs(): LogEntry[] {
 export function initErrorMonitoring(opts?: { sink?: Sink | null }) {
   if (initialized) return;
   initialized = true;
-  remoteSink = opts && 'sink' in opts ? opts.sink ?? null : firebaseSink;
+  remoteSink = opts && 'sink' in opts ? opts.sink ?? null : remoteApiSink;
 
   if (typeof window !== 'undefined') {
     window.addEventListener('error', (e) => {

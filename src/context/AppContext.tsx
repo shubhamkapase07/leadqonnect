@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
-import { doc, updateDoc, deleteDoc, deleteField } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../lib/firebase';
 import { apiLogin, apiSignup, apiLogout, apiMe, friendlyAuthError, type AuthUser, type Profile } from '../lib/auth-client';
@@ -1802,74 +1802,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTeamMembers(prev => prev.filter(m => m.id !== id));
   };
 
-  // --- Admin functions ---
+  // --- Admin functions (backed by /api/admin/manage) ---
   const updateUserPlan = async (userId: string, newPlan: AdminUser['plan']) => {
-    try {
-      const userRef = doc(db, 'users', userId);
-      await updateDoc(userRef, { plan: newPlan });
-    } catch (err) {
-      console.error("Error updating user plan in Firestore:", err);
-    }
+    try { await apiPost('/api/admin/manage', { action: 'plan', userId, plan: newPlan }); }
+    catch (err) { console.error('Error updating user plan:', err); }
   };
 
   const deleteUser = async (userId: string) => {
-    try {
-      const userRef = doc(db, 'users', userId);
-      await deleteDoc(userRef);
-    } catch (err) {
-      console.error("Error deleting user in Firestore:", err);
-    }
+    try { await apiPost('/api/admin/manage', { action: 'delete', userId }); }
+    catch (err) { console.error('Error deleting user:', err); }
   };
 
   const suspendUser = async (userId: string) => {
-    try {
-      const userRef = doc(db, 'users', userId);
-      const user = allUsers.find(u => u.id === userId);
-      if (user) {
-        const nextStatus = user.status === 'suspended' ? 'active' : 'suspended';
-        await updateDoc(userRef, { status: nextStatus });
-      }
-    } catch (err) {
-      console.error("Error suspending user in Firestore:", err);
-    }
+    try { await apiPost('/api/admin/manage', { action: 'suspend', userId }); }
+    catch (err) { console.error('Error suspending user:', err); }
   };
 
   const promoteToAdmin = async (userId: string) => {
-    try {
-      await updateDoc(doc(db, 'users', userId), { role: 'admin' });
-      notify('User promoted to admin.', 'success');
-    } catch (err) {
-      console.error("Error promoting user:", err);
-      notify('Could not promote user.', 'error');
-    }
+    try { await apiPost('/api/admin/manage', { action: 'promote', userId }); notify('User promoted to admin.', 'success'); }
+    catch (err) { console.error('Error promoting user:', err); notify('Could not promote user.', 'error'); }
   };
 
   const demoteFromAdmin = async (userId: string) => {
-    try {
-      await updateDoc(doc(db, 'users', userId), { role: 'user' });
-      notify('Admin access removed.', 'success');
-    } catch (err) {
-      console.error("Error demoting user:", err);
-      notify('Could not update user.', 'error');
-    }
+    try { await apiPost('/api/admin/manage', { action: 'demote', userId }); notify('Admin access removed.', 'success'); }
+    catch (err) { console.error('Error demoting user:', err); notify('Could not update user.', 'error'); }
   };
 
   // Admin: designate a user as a team leader, a member of a leader, or unassign them.
   const setUserTeamRole = async (userId: string, value: 'leader' | 'member' | 'none', leaderUid?: string) => {
+    if (value === 'member') {
+      if (!leaderUid) { notify('Pick a team leader for this member.', 'error'); return; }
+      if (leaderUid === userId) { notify("A member can't report to themselves.", 'error'); return; }
+    }
     try {
-      const ref = doc(db, 'users', userId);
-      if (value === 'leader') {
-        await updateDoc(ref, { teamRole: 'leader', parentUid: deleteField() });
-        notify('Set as team leader.', 'success');
-      } else if (value === 'member') {
-        if (!leaderUid) { notify('Pick a team leader for this member.', 'error'); return; }
-        if (leaderUid === userId) { notify("A member can't report to themselves.", 'error'); return; }
-        await updateDoc(ref, { teamRole: 'member', parentUid: leaderUid });
-        notify('Added to team.', 'success');
-      } else {
-        await updateDoc(ref, { teamRole: deleteField(), parentUid: deleteField() });
-        notify('Removed from team.', 'info');
-      }
+      await apiPost('/api/admin/manage', { action: 'teamRole', userId, value, leaderUid });
+      notify(value === 'leader' ? 'Set as team leader.' : value === 'member' ? 'Added to team.' : 'Removed from team.',
+        value === 'none' ? 'info' : 'success');
     } catch (err) {
       console.error('Error setting team role:', err);
       notify('Could not update team role.', 'error');
