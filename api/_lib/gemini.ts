@@ -62,7 +62,7 @@ export async function qualifyWithGemini(lead: any, campaign: any): Promise<any |
       }),
     });
     if (!res.ok) { console.warn(`[gemini] qualify ${res.status}`); return null; }
-    const data = await res.json();
+    const data: any = await res.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) return null;
     const p = JSON.parse(text);
