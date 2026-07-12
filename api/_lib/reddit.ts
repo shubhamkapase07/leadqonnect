@@ -1,6 +1,6 @@
 // Free Reddit fetching via the public RSS feed (no API key, no Apify). Returns posts in the
 // app's RawPost shape. Reddit 403s its .json endpoints and blocks generic UAs, so we use a
-// browser-like User-Agent against search.rss. See leadfinder/ for the standalone version.
+// browser-like User-Agent against search.rss.
 
 export interface RawPost {
   id: string;
