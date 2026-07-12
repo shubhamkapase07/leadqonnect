@@ -12,8 +12,10 @@ const JWT_TTL_DAYS = 30;
 export const ADMIN_EMAIL = "admin@leadqonnect.com";
 
 function jwtSecret(): Uint8Array {
-  const s = process.env.JWT_SECRET;
-  if (!s) throw new Error("JWT_SECRET is not set");
+  // JWT_SECRET is optional: fall back to the (already-required, private) Turso auth token so
+  // there's one fewer env var to configure. The signing key stays stable and secret either way.
+  const s = process.env.JWT_SECRET || process.env.TURSO_AUTH_TOKEN;
+  if (!s) throw new Error("No signing secret — set JWT_SECRET or TURSO_AUTH_TOKEN.");
   return new TextEncoder().encode(s);
 }
 

@@ -86,6 +86,7 @@ export function friendlyAuthError(code?: string): string {
     case 'invalid_email': return 'Please enter a valid email address.';
     case 'suspended': return 'This account has been suspended.';
     case 'missing_credentials': return 'Please enter your email and password.';
+    case 'server_error': return 'Server error — the backend may be misconfigured (check TURSO_DATABASE_URL / TURSO_AUTH_TOKEN in Vercel).';
     default: return 'Something went wrong. Please try again.';
   }
 }
