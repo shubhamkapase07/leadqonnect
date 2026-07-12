@@ -1,30 +1,18 @@
 /// <reference types="node" />
-// POST /api/razorpay/webhook — source of truth over time (renewals keep plan active;
-// halts/cancellations downgrade to free). Requires the RAW body for signature verification,
-// so the default JSON body parser is disabled and we buffer the stream ourselves.
+// POST /api/razorpay/webhook — renewals keep plan active; halts/cancellations downgrade.
+// The router passes the raw request bytes as req.rawBody (needed for HMAC verification).
 import { createHmac } from "node:crypto";
-import { db } from "../_lib/turso.js";
-import { appPlanForTier } from "../_lib/razorpay.js";
-
-export const config = { api: { bodyParser: false } };
+import { db } from "../../_lib/turso.js";
+import { appPlanForTier } from "../../_lib/razorpay.js";
 
 const ACTIVATE = new Set(["subscription.authenticated", "subscription.activated", "subscription.charged", "subscription.resumed"]);
 const DOWNGRADE = new Set(["subscription.halted", "subscription.cancelled", "subscription.completed", "subscription.expired", "subscription.paused"]);
-
-function readRaw(req: any): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
-}
 
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") { res.status(405).send("method_not_allowed"); return; }
   try {
     const signature = req.headers["x-razorpay-signature"] as string | undefined;
-    const raw = await readRaw(req);
+    const raw: Buffer = req.rawBody || Buffer.from("");
     if (!signature || !raw.length) { res.status(400).send("missing signature/body"); return; }
 
     const expected = createHmac("sha256", process.env.RAZORPAY_WEBHOOK_SECRET || "").update(raw).digest("hex");

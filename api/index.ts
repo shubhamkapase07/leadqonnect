@@ -1,8 +1,11 @@
 /// <reference types="node" />
-// Single catch-all router for ALL /api/* routes except the Razorpay webhook.
-// Vercel's Hobby plan caps a deployment at 12 Serverless Functions, so instead of one
-// function per endpoint we register every handler here and dispatch by path. The actual
-// handlers live in api/_routes/** (the `_` prefix keeps them out of the function count).
+// Single API function. A rewrite in vercel.json sends every /api/* request here as
+// /api/index?path=<subpath>, so ONE Serverless Function serves all routes (Hobby plan
+// caps deployments at 12 functions). Handlers live in api/_routes/** (the `_` keeps them
+// out of the function count). bodyParser is disabled so we can hand the Razorpay webhook
+// the exact raw bytes it needs for signature verification; all other routes get parsed JSON.
+
+export const config = { api: { bodyParser: false } };
 
 import authSignup from "./_routes/auth/signup.js";
 import authLogin from "./_routes/auth/login.js";
@@ -31,6 +34,7 @@ import gmailAction from "./_routes/oauth/gmail/action.js";
 import gmailCallback from "./_routes/oauth/gmail/callback.js";
 import razorpayCreate from "./_routes/razorpay/create.js";
 import razorpayVerify from "./_routes/razorpay/verify.js";
+import razorpayWebhook from "./_routes/razorpay/webhook.js";
 
 type Handler = (req: any, res: any) => any;
 
@@ -62,24 +66,41 @@ const ROUTES: Record<string, Handler> = {
   "oauth/gmail/callback": gmailCallback,
   "razorpay/create": razorpayCreate,
   "razorpay/verify": razorpayVerify,
+  "razorpay/webhook": razorpayWebhook,
 };
 
+function readRaw(req: any): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer | string) => chunks.push(typeof c === "string" ? Buffer.from(c) : c));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+function safeJson(s: string): any { try { return JSON.parse(s); } catch { return {}; } }
+
 export default async function handler(req: any, res: any) {
-  // Vercel provides the catch-all segments in req.query.path; fall back to parsing the URL.
-  let segments: string[] = [];
-  const p = req.query?.path;
-  if (Array.isArray(p)) segments = p;
-  else if (typeof p === "string") segments = [p];
-  else {
-    const url = new URL(req.url, "http://x");
-    segments = url.pathname.replace(/^\/api\//, "").split("/").filter(Boolean);
-  }
-  const key = segments.join("/");
+  const url = new URL(req.url || "/", "http://x");
+  const params = Object.fromEntries(url.searchParams);
+  // Ensure handlers that read req.query.<param> keep working regardless of body parsing.
+  req.query = { ...(req.query || {}), ...params };
+
+  // Path comes from the rewrite (?path=<subpath>); fall back to the URL pathname.
+  const key = String(req.query.path || url.pathname.replace(/^\/api\//, ""))
+    .replace(/^\/+|\/+$/g, "");
 
   const route = ROUTES[key];
-  if (!route) {
-    res.status(404).json({ error: "not_found", path: key });
-    return;
+  if (!route) { res.status(404).json({ error: "not_found", path: key }); return; }
+
+  // Read the body once. The webhook needs the raw bytes; everyone else gets parsed JSON.
+  if (req.method && req.method !== "GET" && req.method !== "HEAD") {
+    const raw = await readRaw(req);
+    req.rawBody = raw;
+    if (key !== "razorpay/webhook") {
+      const txt = raw.toString("utf8");
+      req.body = txt ? safeJson(txt) : {};
+    }
   }
+
   return route(req, res);
 }
