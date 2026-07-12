@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/log  — client error sink (replaces logClientError). Auth optional.
 import { db, nowSec } from "./_lib/turso.js";
 import { getSession } from "./_lib/auth.js";

@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/enroll  { action: 'create'|'stop', ... }  — sequence enrollment writes.
 import { db } from "./_lib/turso.js";
 import { getSession } from "./_lib/auth.js";

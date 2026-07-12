@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/qualify  { lead, campaign } -> { ok, result } | { ok:false }
 // Gemini-backed lead qualification (replaces qualifyLeadAI). Returns null result on failure
 // so the client falls back to its deterministic scorer.

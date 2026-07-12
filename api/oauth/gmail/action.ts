@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/oauth/gmail/action  { action: 'start'|'disconnect'|'send', ... }
 import { getSession } from "../../_lib/auth.js";
 import { json, methodGuard, readBody, isEmail } from "../../_lib/http.js";

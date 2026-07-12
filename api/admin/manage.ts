@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/admin/manage  { action, userId, ... }  — admin user management (admin only).
 // Replaces the Firestore admin writes in AppContext.
 import { db } from "../_lib/turso.js";

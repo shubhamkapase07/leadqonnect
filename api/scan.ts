@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/scan  { platform, keyword, timeframe } -> { ok, posts }
 // Replaces the Apify-backed `scrapeLeads` callable. Reddit uses the free RSS fetcher.
 // Twitter/LinkedIn have no free source, so they return [] (Free plan is Reddit-only anyway).

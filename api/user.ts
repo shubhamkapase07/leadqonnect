@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // GET /api/user?uid=... -> TeamRosterUser  (basic roster projection of any user; used to watch a team leader)
 import { db } from "./_lib/turso.js";
 import { getSession } from "./_lib/auth.js";

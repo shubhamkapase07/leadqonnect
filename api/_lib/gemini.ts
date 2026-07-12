@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // Gemini (free tier) lead qualification — replaces the paid Claude callable.
 // Returns the exact result shape the client's qualifyLead() already consumes.
 

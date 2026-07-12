@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/auth/login  { email, password } -> { token, user }
 // Auto-creates the bootstrap admin account on first login (mirrors the old app behavior).
 import { db, nowSec } from "../_lib/turso.js";

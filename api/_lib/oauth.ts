@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // OAuth helpers for Reddit + Gmail connection/engagement (replaces the Cloud Functions relay).
 // Tokens live in the private oauth_tokens table; nonces in oauth_nonces. Requires these env
 // vars (set in Vercel): REDDIT_CLIENT_ID/SECRET, GOOGLE_CLIENT_ID/SECRET, APP_URL.

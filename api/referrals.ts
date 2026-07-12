@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/referrals  { action: 'track'|'claim'|'dashboard', code? }
 // Refer & earn (replaces trackReferralClick / claimReferral / getReferralDashboard).
 import { randomBytes } from "node:crypto";

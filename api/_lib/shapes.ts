@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // Map snake_case DB rows into the camelCase shapes the frontend already expects
 // (Assignment, SequenceEnrollment, TeamRosterUser, TeamChatMessage). Keeping these here
 // means the client's types/subscriptions don't change.

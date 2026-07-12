@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/razorpay/create  { tier } -> { subscriptionId, keyId }
 import { db } from "../_lib/turso.js";
 import { getSession } from "../_lib/auth.js";

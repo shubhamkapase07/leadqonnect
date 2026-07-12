@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // GET /api/assignments/owned -> Assignment[]  (assignments I created, to watch assignee progress)
 import { db } from "../_lib/turso.js";
 import { getSession } from "../_lib/auth.js";

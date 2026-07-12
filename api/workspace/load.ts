@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // GET /api/workspace/load -> { leads, campaigns, conversations, sequences }
 // Returns all of the signed-in user's workspace docs (parsed JSON), like loadWorkspace().
 import { db, parseJson } from "../_lib/turso.js";

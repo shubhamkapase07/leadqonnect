@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/assignments/mutate  { action: 'upsert'|'delete'|'status', ... }
 // Cross-account lead assignment writes (replaces the Firestore assignment writes in db.ts).
 import { db, nowSec } from "../_lib/turso.js";

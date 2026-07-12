@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // GET /api/auth/me -> { user } | 401
 // Reads fresh from the DB so plan/role/status/OAuth changes reflect on the client's poll.
 import { getSession, findUserByUid, publicUser } from "../_lib/auth.js";

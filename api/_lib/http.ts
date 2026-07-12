@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // Tiny helpers for the Vercel Node serverless functions: consistent JSON responses,
 // method guarding, and body parsing. Keeps every endpoint terse.
 

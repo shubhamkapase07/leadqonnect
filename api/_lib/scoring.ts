@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // Deterministic lead scorer (server copy for cron jobs). Mirrors src/lib/scoring.ts.
 // Intent / Quality / Match scores (0-100). No randomness: same input => same scores.
 // Ported from the original LeadQonnect app; used as the always-available fallback when

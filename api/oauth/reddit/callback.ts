@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // GET /api/oauth/reddit/callback — Reddit redirects here after the user approves.
 import { checkNonce, redditFetchToken, storeTokens, setUserJsonField, redditRedirectUri, APP_URL } from "../../_lib/oauth.js";
 

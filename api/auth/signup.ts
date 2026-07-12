@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/auth/signup  { name, email, password } -> { token, user }
 import { db, nowSec } from "../_lib/turso.js";
 import { hashPassword, signToken, newUid, findUserByEmail, publicUser, ADMIN_EMAIL } from "../_lib/auth.js";

@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/razorpay/webhook — source of truth over time (renewals keep plan active;
 // halts/cancellations downgrade to free). Requires the RAW body for signature verification,
 // so the default JSON body parser is disabled and we buffer the stream ourselves.

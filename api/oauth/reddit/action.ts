@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/oauth/reddit/action  { action: 'start'|'disconnect'|'comment'|'message', ... }
 import { getSession } from "../../_lib/auth.js";
 import { json, methodGuard, readBody } from "../../_lib/http.js";

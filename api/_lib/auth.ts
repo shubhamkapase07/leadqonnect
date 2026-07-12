@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // Auth primitives — password hashing (Node scrypt, no native deps), JWT sessions (jose),
 // and request helpers. Replaces Firebase Auth. Tokens are signed JWTs the client stores
 // and sends as `Authorization: Bearer <token>`.

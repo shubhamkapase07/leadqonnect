@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // GET /api/assignments/assigned-to-me -> Assignment[]
 // Leads assigned to me, matched by uid OR by email (covers invites not yet linked to a uid).
 import { db } from "../_lib/turso.js";

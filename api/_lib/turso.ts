@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // Shared Turso/libSQL client for all Vercel serverless functions.
 import { createClient, type Client } from "@libsql/client";
 

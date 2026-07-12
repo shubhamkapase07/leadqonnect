@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/razorpay/verify  { razorpay_payment_id, razorpay_subscription_id, razorpay_signature }
 // Verifies the signed checkout result and activates the plan.
 import { createHmac } from "node:crypto";

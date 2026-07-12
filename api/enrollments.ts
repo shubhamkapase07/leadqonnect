@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // GET /api/enrollments -> SequenceEnrollment[]  (the signed-in user's enrollments)
 import { db } from "./_lib/turso.js";
 import { getSession } from "./_lib/auth.js";

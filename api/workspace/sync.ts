@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/workspace/sync  { collection, sets: [{id, item}], deletes: [id] } -> { ok }
 // Applies a diff for one workspace collection (the client computes what changed).
 import { db, nowSec } from "../_lib/turso.js";

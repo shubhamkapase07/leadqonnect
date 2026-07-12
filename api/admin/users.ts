@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // GET /api/admin/users -> AdminUser[]  (admin only; excludes the bootstrap admin, like before)
 import { db } from "../_lib/turso.js";
 import { getSession, findUserByUid, ADMIN_EMAIL } from "../_lib/auth.js";

@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // GET /api/oauth/gmail/callback — Google redirects here after the user approves.
 import { checkNonce, googleFetchToken, storeTokens, setUserJsonField, gmailRedirectUri, APP_URL } from "../../_lib/oauth.js";
 

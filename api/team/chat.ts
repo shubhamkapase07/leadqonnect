@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // Team chat channel (keyed by leader uid = teamId).
 //   GET  /api/team/chat?teamId=... -> TeamChatMessage[] (oldest first)
 //   POST /api/team/chat  { teamId, text } -> { ok, id }   (sender taken from the token)

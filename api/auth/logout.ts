@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/auth/logout -> { ok: true }
 // JWTs are stateless, so logout is client-side (drop the token). This exists for symmetry
 // and as the place to add token revocation/blocklisting later if needed.

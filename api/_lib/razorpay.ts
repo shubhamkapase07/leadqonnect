@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // Razorpay REST helpers (subscriptions). Requires env: RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET,
 // RAZORPAY_PLAN_ID_PRO, RAZORPAY_PLAN_ID_AGENCY, RAZORPAY_WEBHOOK_SECRET.
 export function keyId() { return process.env.RAZORPAY_KEY_ID || ""; }

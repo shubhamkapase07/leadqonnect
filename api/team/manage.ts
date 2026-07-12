@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // POST /api/team/manage  { action: 'create'|'delete'|'reset', ... }
 // Team member (child account) provisioning. Replaces the Admin-SDK Cloud Functions — now we
 // just create/delete rows in the users table with parent_uid = the caller.

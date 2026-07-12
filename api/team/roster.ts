@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // GET /api/team/roster?leaderUid=... -> TeamRosterUser[]  (everyone whose parent_uid == leaderUid)
 import { db } from "../_lib/turso.js";
 import { getSession } from "../_lib/auth.js";
